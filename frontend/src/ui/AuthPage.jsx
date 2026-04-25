@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { login, signup } from "../api/auth.js";
 import { getToken, setAuth } from "../auth/authStorage.js";
 import { styles } from "./styles.js";
+import { Brand } from "./Brand.jsx";
 
 export function AuthPage({ mode }) {
   const isSignup = mode === "signup";
@@ -52,20 +53,25 @@ export function AuthPage({ mode }) {
 
   return (
     <div style={styles.page}>
-      <div style={{ ...styles.container, maxWidth: 520 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+      <div style={{ ...styles.container, maxWidth: 560 }}>
+        <div style={{ ...styles.card, padding: 18 }}>
+          <Brand subtitle={isSignup ? "Create your workspace account" : "Sign in to your workspace"} />
+
+          <div style={{ height: 16 }} />
+
           <div>
-            <h2 style={{ margin: 0 }}>{isSignup ? "Create account" : "Welcome back"}</h2>
-            <div style={styles.subtle}>
-              {isSignup ? "Sign up to save tasks securely." : "Log in to access your tasks."}
+            <div style={{ fontSize: 26, fontWeight: 900, letterSpacing: -0.2 }}>
+              {isSignup ? "Create account" : "Welcome back"}
+            </div>
+            <div style={{ ...styles.subtle, marginTop: 6, lineHeight: 1.55 }}>
+              {isSignup
+                ? "Organize work like a Jira board: To do → Done."
+                : "Pick up right where you left off."}
             </div>
           </div>
-          <div style={styles.pill}>Secure JWT</div>
-        </div>
 
-        <div style={{ height: 14 }} />
+          <div style={{ height: 14 }} />
 
-        <div style={styles.card}>
           <form onSubmit={onSubmit} style={{ display: "grid", gap: 10 }}>
             {isSignup ? (
               <div>
@@ -129,13 +135,11 @@ export function AuthPage({ mode }) {
                 </>
               )}
             </div>
+
+            <div style={{ ...styles.subtle, fontSize: 12, lineHeight: 1.6 }}>
+              Tip: use any email you like for local testing.
+            </div>
           </form>
-        </div>
-
-        <div style={{ height: 12 }} />
-
-        <div style={{ ...styles.subtle, fontSize: 12, lineHeight: 1.6 }}>
-          Tip: use any email you like for local testing.
         </div>
       </div>
     </div>
