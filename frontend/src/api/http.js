@@ -1,6 +1,6 @@
 import { getToken } from "../auth/authStorage.js";
 
-const API_BASE = "http://13.206.145.231:4000";
+const API_BASE = "http://35.154.245.17:4000";
 
 export async function request(path, options = {}) {
   const token = getToken();
