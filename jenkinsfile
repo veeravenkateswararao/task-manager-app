@@ -1,0 +1,176 @@
+
+pipeline {
+    agent any
+
+    environment {
+        DOCKERHUB_USER = 'venkyveera'
+        FRONTEND_IMAGE = 'frontend-task'
+        BACKEND_IMAGE  = 'backend-task'
+
+        GIT_REPO   = 'https://github.com/veeravenkateswararao/task-manager-app.git'
+        GIT_BRANCH = '*/main'
+
+        SONAR_SCANNER = 'sonar-scanner'
+        SONAR_ENV     = 'sq'
+
+        NEXUS_URL      = 'http://15.206.82.177:8081'
+        NEXUS_REPO     = 'task-manager-artifacts'
+        ARTIFACT_NAME  = 'task-manager-app'
+
+        ZIP_FILE       = "${ARTIFACT_NAME}.zip"
+        DOWNLOADED_ZIP = "${ARTIFACT_NAME}-${BUILD_NUMBER}.zip"
+        EXTRACT_DIR    = 'extracted'
+    }
+
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                checkout scmGit(
+                    branches: [[name: GIT_BRANCH]],
+                    userRemoteConfigs: [[
+                        credentialsId: 'Git-cred',
+                        url: GIT_REPO
+                    ]]
+                )
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                script {
+                    def scannerHome = tool SONAR_SCANNER
+                    withSonarQubeEnv(SONAR_ENV) {
+                        sh "${scannerHome}/bin/sonar-scanner"
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 2, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Package Artifact') {
+            steps {
+                sh "zip -r ${ZIP_FILE} ."
+            }
+        }
+
+        stage('Upload Artifact to Nexus') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'nexus-cred',
+                    usernameVariable: 'NEXUS_USER',
+                    passwordVariable: 'NEXUS_PASS'
+                )]) {
+                    sh """
+                    curl -u \$NEXUS_USER:\$NEXUS_PASS \
+                    --upload-file ${ZIP_FILE} \
+                    ${NEXUS_URL}/repository/${NEXUS_REPO}/${ARTIFACT_NAME}-${BUILD_NUMBER}.zip
+                    """
+                }
+            }
+        }
+
+        stage('Download Artifact From Nexus') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'nexus-cred',
+                    usernameVariable: 'NEXUS_USER',
+                    passwordVariable: 'NEXUS_PASS'
+                )]) {
+                    sh """
+                    curl -u \$NEXUS_USER:\$NEXUS_PASS \
+                    -o ${DOWNLOADED_ZIP} \
+                    ${NEXUS_URL}/repository/${NEXUS_REPO}/${ARTIFACT_NAME}-${BUILD_NUMBER}.zip
+                    """
+                }
+            }
+        }
+
+        stage('Extract Artifact') {
+            steps {
+                sh """
+                rm -rf ${EXTRACT_DIR}
+                mkdir ${EXTRACT_DIR}
+                unzip ${DOWNLOADED_ZIP} -d ${EXTRACT_DIR}
+                """
+            }
+        }
+
+        stage('Docker Login') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                }
+            }
+        }
+
+        stage('Build Frontend Docker Image') {
+            steps {
+                sh """
+                docker build -t ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${BUILD_NUMBER} ./${EXTRACT_DIR}/frontend
+                """
+            }
+        }
+
+        stage('Build Backend Docker Image') {
+            steps {
+                sh """
+                docker build -t ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${BUILD_NUMBER} ./${EXTRACT_DIR}/backend
+                """
+            }
+        }
+
+        stage('Push Docker Images') {
+            steps {
+                sh """
+                docker push ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${BUILD_NUMBER}
+                docker push ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${BUILD_NUMBER}
+                """
+            }
+        }
+
+        stage('Update K8s Manifests') {
+            steps {
+                sh """
+                sed -i 's|image: .*frontend-task:.*|image: ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${BUILD_NUMBER}|g' k8s/frontend.yml
+                sed -i 's|image: .*backend-task:.*|image: ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${BUILD_NUMBER}|g' k8s/backend.yml
+                """
+            }
+        }
+
+        stage('Deploy To EKS') {
+            steps {
+                withKubeConfig([credentialsId: 'eks-kubeconfig']) {
+                    sh '''
+                    kubectl apply -f k8s/namespace.yml
+                    kubectl apply -f k8s/frontend.yml
+                    kubectl apply -f k8s/backend.yml
+                    kubectl apply -f k8s/ingress.yml
+                    '''
+                }
+            }
+        }
+
+        stage('Verify Rollout') {
+            steps {
+                withKubeConfig([credentialsId: 'eks-kubeconfig']) {
+                    sh '''
+                    kubectl rollout status deployment/frontend-deployment -n taskmgr
+                    kubectl rollout status deployment/backend-deployment -n taskmgr
+                    '''
+                }
+            }
+        }
+    }
+}
