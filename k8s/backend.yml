@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: backend-container
-          image: venkyveera/backend-task:24
+          image: venkyveera/backend-task:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 4000
