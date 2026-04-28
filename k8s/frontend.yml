@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: frontend-container
-          image: venkyveera/frontend-task:24
+          image: venkyveera/frontend-task:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 80
